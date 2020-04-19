@@ -31,11 +31,10 @@ func (q *Queries) List(w http.ResponseWriter) {
 		return
 	}
 
+	var err error
+
 	fmt.Println("Найдено:", len((*q).set), "URL")
 	for key, value := range (*q).set {
-		var err error
-
-		fmt.Println(key)
 
 		tmpString := strings.Join([]string{"Запрос строки ", (*value).Search, ". Кол-во URL:", strconv.Itoa(len((*value).URLs)), ". <a href=/url/", strconv.Itoa(key), ">Смотреть результаты</a><br>"},"")
 		_, err = fmt.Fprintln(w, tmpString)
@@ -44,6 +43,12 @@ func (q *Queries) List(w http.ResponseWriter) {
 			log.Println(err)
 			return
 		}
+	}
+
+	_, err = fmt.Println(w, "<a href=/result/check>Просмотр текущих результатов (если ранее запускали)</a>")
+	if err != nil {
+		w.WriteHeader(400)
+		log.Println(err)
 	}
 }
 
