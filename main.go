@@ -44,6 +44,15 @@ func (s *Search) GetLength() byte {
 	return s.Length
 }
 
+func (s *Search) check(t *TmpSearch) {
+
+	// проходимся по срезу с URL
+	for _, URL := range (*t).URLs {
+		fmt.Println("Запускаем горутину для проверки URL:", URL, ". Строка поиска: ", t.Search)
+		go ProcessURL(URL, s)
+	}
+}
+
 const (
 	port = "8080"
 )
@@ -77,53 +86,12 @@ func (c *Links) Unfinished() bool {
 	return !c.Finished
 }
 
-func NewURLs() *Links {
-	return &Links{
-		URLs:     make([]string, 0),
-		Finished: false,
-	}
-}
-
 // AddURL adds an URL to the slice
 func (c *Links) AddURL(URL string) {
 	c.mx.Lock()
 	defer c.mx.Unlock()
 
 	c.URLs = append((*c).URLs, URL)
-}
-
-// Print prints the URLs
-func (c *Links) Print(w http.ResponseWriter) error {
-	c.mx.RLock()
-	defer c.mx.RUnlock()
-
-	// добавляем URL
-	for _, value := range c.URLs {
-		_, err := fmt.Fprintln(w, value)
-		if err != nil {
-			http.Error(w, http.StatusText(503), 503)
-			log.Println(err)
-			return err
-		}
-	}
-
-	return nil
-}
-
-// GetMap returns the URLs
-func (c *Links) GetMap() []string {
-	c.mx.RLock()
-	defer c.mx.RUnlock()
-
-	return c.URLs
-}
-
-// EraseData removes all the data from the map
-func (c *Links) EraseUserData() {
-	c.mx.Lock()
-	defer c.mx.Unlock()
-
-	c.URLs = make([]string, 0)
 }
 
 func ProcessURL(URL string, s *Search) {
@@ -150,15 +118,6 @@ func ProcessURL(URL string, s *Search) {
 	// фиксируем что завершена обработка dataSet
 	if s.GetLength() == 0 {
 		s.Finish()
-	}
-}
-
-func check(t *TmpSearch, s *Search) {
-
-	// проходимся по срезу с URL
-	for _, URL := range (*t).URLs {
-		fmt.Println("Запускаем горутину для проверки URL:", URL, ". Строка поиска: ", t.Search)
-		go ProcessURL(URL, s)
 	}
 }
 
@@ -315,7 +274,7 @@ func GiveMeURL(q *Queries) httprouter.Handle {
 		decodedSearchData.Length = byte(URLNumber)
 
 		// запускаем обработку (прописываем URL)
-		check(&tmpDecodedSearchData, &decodedSearchData)
+		decodedSearchData.check(&tmpDecodedSearchData)
 
 		_, err = fmt.Fprintln(w, "Обработка запущена...<br>")
 		if err != nil {
