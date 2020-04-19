@@ -278,7 +278,6 @@ func GiveMeURL(q *Queries) httprouter.Handle {
 
 		if searchData == "" {
 			log.Println("Ошибка: Запрос не может быть пустым!")
-			w.WriteHeader(400)
 			return
 		}
 
@@ -289,13 +288,12 @@ func GiveMeURL(q *Queries) httprouter.Handle {
 		err = json.Unmarshal([]byte(searchData), &tmpDecodedSearchData)
 		if err != nil {
 			log.Println(err)
-			w.WriteHeader(400)
+			
 			return
 		}
 
 		if tmpDecodedSearchData.Search == "" {
 			log.Println("Ошибка: Поисковая фраза не может быть пустой!")
-			w.WriteHeader(400)
 			return
 		}
 
@@ -309,7 +307,6 @@ func GiveMeURL(q *Queries) httprouter.Handle {
 		URLNumber := len(tmpDecodedSearchData.URLs)
 		if URLNumber == 0 {
 			log.Println("Кол-во URL нулевое, неверный запрос!")
-			w.WriteHeader(400)
 			return
 		}
 		fmt.Println("Кол-во URL в запросе:", tmpDecodedSearchData.Search)
@@ -322,7 +319,7 @@ func GiveMeURL(q *Queries) httprouter.Handle {
 
 		_, err = fmt.Fprintln(w, "Обработка запущена...<br>")
 		if err != nil {
-			w.WriteHeader(400)
+			
 			log.Println(err)
 		}
 
@@ -331,7 +328,6 @@ func GiveMeURL(q *Queries) httprouter.Handle {
 
 		_, err = fmt.Fprintln(w, "<br><a href=/result/check>Просмотр результатов</a>")
 		if err != nil {
-			w.WriteHeader(400)
 			log.Println(err)
 		}
 	}
@@ -344,9 +340,8 @@ func Welcome(queries *Queries) httprouter.Handle {
 		switch {
 		case actions.ByName("action") == "check":
 
-			_, err = fmt.Fprintln(w, "Результаты:<br>")
+			_, err = fmt.Fprintln(w, "<b>Результаты:</b><br>")
 			if err != nil {
-				w.WriteHeader(400)
 				log.Println(err)
 			}
 
@@ -355,18 +350,21 @@ func Welcome(queries *Queries) httprouter.Handle {
 
 			_, err = fmt.Fprintln(w, "<br><br><a href=/>Новый запрос</a>")
 			if err != nil {
-				w.WriteHeader(400)
 				log.Println(err)
 			}
+
 		case r.Method == "GET":
-			_, err = fmt.Fprint(w, `<form action="/" method="post">
+			_, err = fmt.Fprintln(w, `<form action="/" method="post">
 						<label for="query">Поисковая строка:</label>
 						<textarea rows="10" cols="45" name="query" id="query" placeholder="Лалала"></textarea>
 						<input type="submit" value="Искать">
 					</form>`)
-			_, err = fmt.Println(w, "<a href=/result/check>Просмотр текущих результатов (если ранее запускали)</a>")
 			if err != nil {
-				w.WriteHeader(400)
+				log.Println(err)
+			}
+
+			_, err = fmt.Fprintln(w, "<a href=/result/check>Просмотр всех результатов</a>")
+			if err != nil {
 				log.Println(err)
 			}
 		}
@@ -378,7 +376,6 @@ func Result(q *Queries) httprouter.Handle {
 		queryID := actions.ByName("id")
 		id, err := strconv.Atoi(queryID)
 		if err != nil {
-			w.WriteHeader(400)
 			log.Println(err)
 			return
 		}
