@@ -27,7 +27,7 @@ type Search struct {
 
 type TmpSearch struct {
 	Search string
-	URLs []string
+	URLs   []string
 }
 
 func (s *Search) Mark() {
@@ -137,10 +137,10 @@ func ProcessURL(URL string, s *Search) {
 		pageData, err = ioutil.ReadAll(req.Body)
 		// проверяем ещё раз
 		if !strings.Contains(string(pageData), (*s).Search) {
-			fmt.Println("====== По адресу ", URL ," поисковая строка не обнаружена:")
+			fmt.Println("====== По адресу ", URL, " поисковая строка не обнаружена:")
 		} else {
 			s.Links.AddURL(URL)
-			fmt.Println("====== По адресу ", URL ," поисковая строка обнаружена! Хорошо!")
+			fmt.Println("====== По адресу ", URL, " поисковая строка обнаружена! Хорошо!")
 		}
 	}
 
@@ -364,7 +364,7 @@ func Welcome(queries *Queries) httprouter.Handle {
 						<textarea rows="10" cols="45" name="query" id="query" placeholder="Лалала"></textarea>
 						<input type="submit" value="Искать">
 					</form>`)
-			_, err = fmt.Fprintln(w, "<a href=/result/check>Просмотр текущих результатов (если ранее запускали)</a>")
+			_, err = fmt.Println(w, "<a href=/result/check>Просмотр текущих результатов (если ранее запускали)</a>")
 			if err != nil {
 				w.WriteHeader(400)
 				log.Println(err)
@@ -378,11 +378,8 @@ func Result(q *Queries) httprouter.Handle {
 		queryID := actions.ByName("id")
 		id, err := strconv.Atoi(queryID)
 		if err != nil {
-			_, err = fmt.Fprintln(w, err)
-			if err != nil {
-				w.WriteHeader(400)
-				log.Println(err)
-			}
+			w.WriteHeader(400)
+			log.Println(err)
 			return
 		}
 
