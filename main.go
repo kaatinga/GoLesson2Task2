@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -22,6 +23,11 @@ type Search struct {
 	Search string
 	Length byte
 	Links
+}
+
+type TmpSearch struct {
+	Search string
+	URLs []string
 }
 
 func (s *Search) Mark() {
@@ -78,22 +84,12 @@ func NewURLs() *Links {
 	}
 }
 
-func Remove(s []string, key int) []string {
-	return append(s[:key], s[key+1:]...)
-}
-
-// Delete an URL form the map
-func (c *Links) DeleteURL(URL string) {
+// AddURL adds an URL to the slice
+func (c *Links) AddURL(URL string) {
 	c.mx.Lock()
 	defer c.mx.Unlock()
 
-	// удаляем по значению
-	for key, value := range c.URLs {
-		if value == URL {
-			c.URLs = Remove((*c).URLs, key)
-			return
-		}
-	}
+	c.URLs = append((*c).URLs, URL)
 }
 
 // Print prints the URLs
@@ -133,9 +129,7 @@ func (c *Links) EraseUserData() {
 func ProcessURL(URL string, s *Search) {
 	fmt.Println("====== Проверяем URL", URL)
 	req, err := http.Get(URL)
-
 	if err != nil {
-		s.Links.DeleteURL(URL)
 		log.Println(err)
 	} else {
 
@@ -143,11 +137,10 @@ func ProcessURL(URL string, s *Search) {
 		pageData, err = ioutil.ReadAll(req.Body)
 		// проверяем ещё раз
 		if !strings.Contains(string(pageData), (*s).Search) {
-			s.Links.DeleteURL(URL)
-			fmt.Println("Поисковая строка не обнаружена")
+			fmt.Println("====== По адресу ", URL ," поисковая строка не обнаружена:")
 		} else {
-			// ничего не делаем
-			fmt.Println("Поисковая строка обнаружена! Хорошо!")
+			s.Links.AddURL(URL)
+			fmt.Println("====== По адресу ", URL ," поисковая строка обнаружена! Хорошо!")
 		}
 	}
 
@@ -160,13 +153,11 @@ func ProcessURL(URL string, s *Search) {
 	}
 }
 
-func check(s *Search) {
+func check(t *TmpSearch, s *Search) {
 
-	// безопасно вычитываем карту
-	tempSlice := s.Links.GetMap()
-
-	// проходимся по ней
-	for _, URL := range tempSlice {
+	// проходимся по срезу с URL
+	for _, URL := range (*t).URLs {
+		fmt.Println("Запускаем горутину для проверки URL:", URL, ". Строка поиска: ", t.Search)
 		go ProcessURL(URL, s)
 	}
 }
@@ -198,8 +189,9 @@ func main() {
 
 	// анонсируем хандлеры
 	router.router.GET("/", Welcome(&queries))
-	router.router.GET("/:action", Welcome(&queries))
+	router.router.GET("/result/:action", Welcome(&queries))
 	router.router.POST("/", GiveMeURL(&queries))
+	router.router.GET("/url/:id", Result(&queries))
 
 	webServer := http.Server{
 		Addr:              net.JoinHostPort("", port),
@@ -239,6 +231,12 @@ func (rw *Middleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("-------------------", time.Now().In(moscow).Format(http.TimeFormat), "A request is received -------------------")
 	fmt.Println("The request is from", r.RemoteAddr, "| Method:", r.Method, "| URI:", r.URL.String())
 
+	// favicon.ico костыль
+	if r.URL.String() == "/favicon.ico" {
+		http.ServeFile(w, r, "favicon.ico")
+		return
+	}
+
 	if r.Method == "POST" {
 		// проверяем размер POST данных
 		r.Body = http.MaxBytesReader(w, r.Body, 1000)
@@ -250,13 +248,16 @@ func (rw *Middleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// начало файла
 	_, err := fmt.Fprintln(w, "<html lang=ru><head><meta charset=UTF-8></head><body>")
 	if err != nil {
 		log.Println(err)
 	}
 
+	// хэндлеры тут
 	rw.router.ServeHTTP(w, r)
 
+	// конец файла
 	_, err = fmt.Fprint(w, "</body></html>")
 	if err != nil {
 		log.Println(err)
@@ -271,49 +272,66 @@ func GiveMeURL(q *Queries) httprouter.Handle {
 
 		var searchData string
 
-		fmt.Println("Начинаем обрабатывать данные...<br>")
+		fmt.Println("Начинаем обрабатывать данные...")
 
 		searchData = r.PostForm.Get("query")
 
 		if searchData == "" {
-			fmt.Println("<b>Ошибка: Запрос не может быть пустым!</b><br>")
-			http.Error(w, http.StatusText(400), 400)
+			log.Println("Ошибка: Запрос не может быть пустым!")
+			w.WriteHeader(400)
 			return
 		}
 
 		fmt.Println("Данные приняты...<br>")
 
-		var decodedSearchData Search
-		err = json.Unmarshal([]byte(searchData), &decodedSearchData)
+		var tmpDecodedSearchData TmpSearch
 
-		// прописываем кол-во URL
-		decodedSearchData.Length = byte(len(decodedSearchData.URLs))
-
-		if decodedSearchData.Search == "" {
-			fmt.Println("<b>Ошибка: Поисковая фраза не может быть пустой!</b><br>")
-			http.Error(w, http.StatusText(400), 400)
+		err = json.Unmarshal([]byte(searchData), &tmpDecodedSearchData)
+		if err != nil {
+			log.Println(err)
+			w.WriteHeader(400)
 			return
 		}
 
-		fmt.Println("Поисковая строка:", decodedSearchData.Search, "<br>")
+		if tmpDecodedSearchData.Search == "" {
+			log.Println("Ошибка: Поисковая фраза не может быть пустой!")
+			w.WriteHeader(400)
+			return
+		}
 
-		var dataSet = NewURLs()
+		fmt.Println("Поисковая строка:", tmpDecodedSearchData.Search)
 
-		dataSet.URLs = decodedSearchData.URLs
+		// прописываем строку поиска в финальный dataSet
+		var decodedSearchData Search
+		decodedSearchData.Search = tmpDecodedSearchData.Search
 
-		// запускаем обработку
-		check(&decodedSearchData)
+		// проверяем кол-во URL
+		URLNumber := len(tmpDecodedSearchData.URLs)
+		if URLNumber == 0 {
+			log.Println("Кол-во URL нулевое, неверный запрос!")
+			w.WriteHeader(400)
+			return
+		}
+		fmt.Println("Кол-во URL в запросе:", tmpDecodedSearchData.Search)
 
-		_, err = fmt.Fprintln(w, "<br>Обработка запущена...")
+		// прописываем кол-во URL
+		decodedSearchData.Length = byte(URLNumber)
+
+		// запускаем обработку (прописываем URL)
+		check(&tmpDecodedSearchData, &decodedSearchData)
+
+		_, err = fmt.Fprintln(w, "Обработка запущена...<br>")
 		if err != nil {
+			w.WriteHeader(400)
 			log.Println(err)
 		}
 
 		// добавляем ссылку в массив данных запросов
 		q.Add(&decodedSearchData)
 
-		_, err = fmt.Fprintln(w, "<a href=/check>Просмотр результатов</a>")
+		_, err = fmt.Fprintln(w, "<br><a href=/result/check>Просмотр результатов</a>")
 		if err != nil {
+			w.WriteHeader(400)
 			log.Println(err)
 		}
 	}
@@ -328,6 +346,7 @@ func Welcome(queries *Queries) httprouter.Handle {
 
 			_, err = fmt.Fprintln(w, "Результаты:<br>")
 			if err != nil {
+				w.WriteHeader(400)
 				log.Println(err)
 			}
 
@@ -336,6 +355,7 @@ func Welcome(queries *Queries) httprouter.Handle {
 
 			_, err = fmt.Fprintln(w, "<br><br><a href=/>Новый запрос</a>")
 			if err != nil {
+				w.WriteHeader(400)
 				log.Println(err)
 			}
 		case r.Method == "GET":
@@ -344,11 +364,28 @@ func Welcome(queries *Queries) httprouter.Handle {
 						<textarea rows="10" cols="45" name="query" id="query" placeholder="Лалала"></textarea>
 						<input type="submit" value="Искать">
 					</form>`)
-			_, err = fmt.Fprintln(w, "<a href=/check>Просмотр текущих результатов (если ранее запускали)</a>")
+			_, err = fmt.Fprintln(w, "<a href=/result/check>Просмотр текущих результатов (если ранее запускали)</a>")
 			if err != nil {
-				http.Error(w, http.StatusText(503), 503)
+				w.WriteHeader(400)
 				log.Println(err)
 			}
 		}
+	}
+}
+
+func Result(q *Queries) httprouter.Handle {
+	return func(w http.ResponseWriter, _ *http.Request, actions httprouter.Params) {
+		queryID := actions.ByName("id")
+		id, err := strconv.Atoi(queryID)
+		if err != nil {
+			_, err = fmt.Fprintln(w, err)
+			if err != nil {
+				w.WriteHeader(400)
+				log.Println(err)
+			}
+			return
+		}
+
+		q.GetOne(w, byte(id))
 	}
 }

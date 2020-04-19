@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 )
 
 type Queries struct {
-	mx       sync.RWMutex
+	mx  sync.RWMutex
 	set []*Search
 }
 
@@ -29,11 +31,46 @@ func (q *Queries) List(w http.ResponseWriter) {
 		return
 	}
 
-	fmt.Println("Найдено: ", len((*q).set), "<br>")
+	fmt.Println("Найдено:", len((*q).set), "URL")
 	for key, value := range (*q).set {
-		_, err := fmt.Fprintln(w, "Запрос строки ", (*value).Search, ". Кол-во URL:", len((*value).URLs), ". <a=/url/",key,">Смотреть результаты</a><br>")
+		var err error
+
+		fmt.Println(key)
+
+		tmpString := strings.Join([]string{"Запрос строки ", (*value).Search, ". Кол-во URL:", strconv.Itoa(len((*value).URLs)), ". <a href=/url/", strconv.Itoa(key), ">Смотреть результаты</a><br>"},"")
+		_, err = fmt.Fprintln(w, tmpString)
 		if err != nil {
-			http.Error(w, http.StatusText(503), 503)
+			w.WriteHeader(500)
+			log.Println(err)
+			return
+		}
+	}
+}
+
+func (q *Queries) GetOne(w http.ResponseWriter, id byte) {
+	q.mx.RLock()
+	defer q.mx.RUnlock()
+
+	if !(*q).set[id].Finished {
+		_, err := fmt.Fprintln(w, "Обработка ещё не завершена")
+		if err != nil {
+			w.WriteHeader(400)
+			log.Println(err)
+		}
+		return
+	}
+
+	_, err := fmt.Fprintln(w, "Cтрока поиска: ", (*q).set[id].Search, ".<br><br><b>Список URL в которых URL встречается:</b><br>")
+	if err != nil {
+		w.WriteHeader(400)
+		log.Println(err)
+	}
+
+	// обходим URL в наборе
+	for _, value := range (*q).set[id].URLs {
+		_, err := fmt.Fprintln(w, "<a href=", value, ">", value, "</a><br>")
+		if err != nil {
+			w.WriteHeader(400)
 			log.Println(err)
 		}
 	}
